@@ -40,13 +40,71 @@ public class MyController {
 		log.info( "received. rr=" + rr.getParams() );
 		log.info( "env.host=" + System.getenv( "env.host" ) );
 		
-		return ssh( rr.getParams() );
+//		return ssh( rr.getParams() );
+		return sshs( rr.getParams() );
+	}
+	
+	private Mono<String> sshs( List<String> cmds ) {
+    	final ExecutorService es = ThreadUtils.newCachedThreadPool( "fuga" );
+		final String host = System.getenv( "env.host" );
+		return Flux.just( host, host )
+				.log()
+				
+    			.flatMapSequential( s -> sshClient( s, cmds, es ), 2 )
+    			//.subscribeOn( Schedulers.newElastic( 30, new ThreadUtils.SshdThreadFactory( "fugo" ) ) )
+    			//.subscribeOn( Schedulers.elastic() )
+    			.subscribeOn( Schedulers.fromExecutorService( es ), true )
+    			.collect( Collectors.joining() )
+    			;
+	}
+	
+	private Mono<String> sshClient( String host, List<String> cmds, ExecutorService es ) {
+        try ( SshClient client = SshClient.setUpDefaultClient() ) {
+        	client.setIoServiceFactoryFactory( new AbstractIoServiceFactoryFactory( es, false ) {
+
+				@Override
+				public IoServiceFactory create( FactoryManager manager ) {
+					return new Nio2ServiceFactory( manager, getExecutorService(), isShutdownOnExit() );
+				}
+        		
+        	});
+    		final KeyPair kp = ClientIdentityLoader.DEFAULT.loadClientIdentity( System.getenv( "env.key" ), FilePasswordProvider.EMPTY );
+        	client.addPublicKeyIdentity( kp );
+        	client.start();
+			log.info( "started." );
+
+        	try {
+    	    	ConnectFuture cf = client.connect( System.getenv( "env.user" ), host, Integer.parseInt( System.getenv( "env.port" ) ) );
+    	    	cf.await( 2000L );
+    	
+    	    	try ( ClientSession session = cf.getSession() ) {
+    	    		session.auth().verify( 2000L );
+    	
+    	    		final ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+    	    		final ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+    	    		try ( ClientChannel shell = session.createExecChannel( String.join( "; ", cmds ) ) ) {
+    	       			shell.setOut( stdout );
+    	       			shell.setErr( stderr );
+    	       			shell.open().await();
+    	    			shell.waitFor( Arrays.asList( ClientChannelEvent.CLOSED, ClientChannelEvent.EOF ), 0 );
+    	
+    	    			return Mono.just( "[" + stdout.toString() + "]\n[" + stderr.toString() + "]" );
+    	    		} finally {
+    	    			session.close();
+    	    		}
+    	    	}
+        	} finally {
+        		client.close();
+        	}
+        } catch ( Exception e) {
+        	throw new RuntimeException( e );
+        }
 	}
 	
 	private Mono<String> ssh( List<String> cmds ) throws Exception {
         try ( SshClient client = SshClient.setUpDefaultClient() ) {
-        	final ExecutorService es = ThreadUtils.newFixedThreadPool( "hoge", 3 );
-//        	final ExecutorService es = ThreadUtils.newCachedThreadPool( "fuga" );
+//        	final ExecutorService es = ThreadUtils.newFixedThreadPool( "hoge", 3 );
+        	final ExecutorService es = ThreadUtils.newCachedThreadPool( "fuga" );
         	client.setIoServiceFactoryFactory( new AbstractIoServiceFactoryFactory( es, false ) {
 
 				@Override
@@ -64,8 +122,8 @@ public class MyController {
         		final String host = System.getenv( "env.host" );
         		return Flux.just( host, host )
         				.log()
-	        			.flatMapSequential( s -> Mono.just( connectAndExec( client, s, cmds ) ) )
-	        			.subscribeOn( Schedulers.fromExecutor( es ) )
+	        			.flatMap( s -> Mono.just( connectAndExec( client, s, cmds ) ) )
+	        			.subscribeOn( Schedulers.fromExecutorService( es ), false )
 	        			.collect( Collectors.joining() )
 	        			;
 
