@@ -31,7 +31,7 @@ public class MyControllerTest {
 	@Test
 	public void testSsh() throws Exception {
 		
-		// do
+		// do  curl -v -X POST -H 'Content-type: application/json' -d '{"params":["sleep 1","hostname"]}' http://localhost:8080/command/ssh
 		final RequestResource rr = new RequestResource();
 		rr.setParams( Arrays.asList( "sleep 1", "hostname" ) );
 		final WebTestClient.ResponseSpec spec = test.post().uri( "/command/ssh" )
