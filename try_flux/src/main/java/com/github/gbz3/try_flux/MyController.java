@@ -27,6 +27,8 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -34,6 +36,29 @@ import reactor.core.scheduler.Schedulers;
 @RestController
 public class MyController {
 	private static Log log = LogFactory.getLog( MyController.class );
+	
+	@RequestMapping( path = "/command/jack", method = RequestMethod.POST )
+	public Mono<String> jack( @RequestBody RequestResource rr ) throws Exception {
+		log.info( "received. rr=" + rr.getParams() );
+		
+		// setup
+		final Dummy dummy = new Dummy();
+		dummy.value = "dummy";
+		dummy.subDummy = new SubDummy();
+		dummy.subDummy.value = "sub-dummy";
+		
+		// convert
+		return Mono.just( new ObjectMapper().writeValueAsString( dummy ) );
+	}
+	
+	private static class Dummy {
+		public String value;
+		public SubDummy subDummy;
+	}
+
+	private static class SubDummy {
+		public String value;
+	}
 	
 	@RequestMapping( path = "/command/ssh", method = RequestMethod.POST )
 	public Mono<String> ssh( @RequestBody RequestResource rr ) throws Exception {
